@@ -3,8 +3,6 @@
 
 module Main where
 
-import qualified Data.ByteString.Char8 as B
-import Data.IORef
 import qualified Data.Text as T
 
 import Snap
@@ -99,7 +97,7 @@ loginHandler = do
   onSuccess = do
     mu <- currentUser
     case mu of
-      Just user -> redirect' "/" 303
+      Just _ -> redirect' "/" 303
       Nothing -> blaze "Can't happen"
 
 logoutHandler :: Handler App (AuthManager App) ()
