@@ -4,7 +4,6 @@
 module Main where
 
 import qualified Data.ByteString.Char8 as B
-import Data.Maybe
 import Data.IORef
 import qualified Data.Text as T
 
@@ -25,7 +24,6 @@ data App = App
   { _heist :: Snaplet (Heist App)
   , _auth :: Snaplet (AuthManager App)
   , _sess :: Snaplet SessionManager
-  , _companyName :: IORef B.ByteString
   }
 
 makeLenses [''App]
@@ -40,55 +38,58 @@ appInit = makeSnaplet "snaplet-auth-example" "Snaplet Auth Example" Nothing $ do
   as <- nestSnaplet "auth" auth $
     initJsonFileAuthManager defAuthSettings sess "users.json"
   addRoutes [ ("/a/login", with auth $ loginHandler)
+            , ("/a/logout", with auth $ logoutHandler)
             , ("/a/register", with auth $ registerHandler)
-            , ("/hello", namePage)
-            , ("/company", companyHandler)
+            , ("/", namePage)
             ]
   wrapHandlers (<|> heistServe)
-  ref <- liftIO $ newIORef "fooCorp"
-  return $ App hs as ss ref
+  return $ App hs as ss
 
 namePage :: Handler App App ()
 namePage = do
   mu <- with auth currentUser
   blaze $ do
     H.h1 "Snaplet Auth Example"
-    H.div $ H.toHtml $ fromMaybe "You're not logged in" $ fmap (T.append "Welcome " . userLogin) mu
-    H.h2 "Login"
-    H.form ! A.method "POST"
-           ! A.action "/a/login" $ do
-      H.label ! A.for "login" $ "Username: "
-      H.input ! A.type_ "text"
-              ! A.name "login"
-              ! A.id "login"
-              ! A.value ""
-      H.label ! A.for "login" $ "Password: "
-      H.input ! A.type_ "password"
-              ! A.name "password"
-              ! A.id "password"
-              ! A.value ""
-      H.label ! A.for "login" $ "Remember me: "
-      H.input ! A.type_ "checkbox"
-              ! A.name "remember"
-              ! A.id "remember"
-              ! A.value ""
-      H.input ! A.type_ "submit"
-              ! A.value "Login"
-    H.h2 "Register"
-    H.form ! A.method "POST"
-           ! A.action "/a/register" $ do
-      H.label ! A.for "login" $ "Username: "
-      H.input ! A.type_ "text"
-              ! A.name "login"
-              ! A.id "login"
-              ! A.value ""
-      H.label ! A.for "login" $ "Password: "
-      H.input ! A.type_ "password"
-              ! A.name "password"
-              ! A.id "password"
-              ! A.value ""
-      H.input ! A.type_ "submit"
-              ! A.value "Register"
+    case mu of
+      Just u -> H.div $ do
+        H.toHtml $ "Welcome " `T.append` userLogin u `T.append` ". "
+        H.a ! A.href "/a/logout" $ "Logout"
+      Nothing -> do
+        H.h2 "Login"
+        H.form ! A.method "POST"
+               ! A.action "/a/login" $ do
+          H.label ! A.for "login" $ "Username: "
+          H.input ! A.type_ "text"
+                  ! A.name "login"
+                  ! A.id "login"
+                  ! A.value ""
+          H.label ! A.for "login" $ "Password: "
+          H.input ! A.type_ "password"
+                  ! A.name "password"
+                  ! A.id "password"
+                  ! A.value ""
+          H.label ! A.for "login" $ "Remember me: "
+          H.input ! A.type_ "checkbox"
+                  ! A.name "remember"
+                  ! A.id "remember"
+                  ! A.value ""
+          H.input ! A.type_ "submit"
+                  ! A.value "Login"
+        H.h2 "Register"
+        H.form ! A.method "POST"
+               ! A.action "/a/register" $ do
+          H.label ! A.for "login" $ "Username: "
+          H.input ! A.type_ "text"
+                  ! A.name "login"
+                  ! A.id "login"
+                  ! A.value ""
+          H.label ! A.for "login" $ "Password: "
+          H.input ! A.type_ "password"
+                  ! A.name "password"
+                  ! A.id "password"
+                  ! A.value ""
+          H.input ! A.type_ "submit"
+                  ! A.value "Register"
 
 loginHandler :: Handler App (AuthManager App) ()
 loginHandler = do
@@ -98,28 +99,18 @@ loginHandler = do
   onSuccess = do
     mu <- currentUser
     case mu of
-       Just user -> blaze $ do
-         "Logged in. Welcome"
-         H.toHtml $ userLogin user
-       Nothing -> blaze "Can't happen"
+      Just user -> redirect' "/" 303
+      Nothing -> blaze "Can't happen"
+
+logoutHandler :: Handler App (AuthManager App) ()
+logoutHandler = do
+  logout
+  redirect' "/" 303
 
 registerHandler :: Handler App (AuthManager App) ()
 registerHandler = do
   authUser <- registerUser "login" "password"
   blaze $ H.toHtml $ show authUser
-
-companyHandler :: Handler App App ()
-companyHandler = method GET getter <|> method POST setter
-  where
-  getter = do
-    nameRef <- gets _companyName
-    name <- liftIO $ readIORef nameRef
-    writeBS name
-  setter = do
-    mname <- getParam "name"
-    nameRef <- gets _companyName
-    liftIO $ maybe (return ()) (writeIORef nameRef) mname
-    getter
 
 main :: IO ()
 main = serveSnaplet defaultConfig appInit
